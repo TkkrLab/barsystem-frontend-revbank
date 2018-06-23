@@ -114,10 +114,13 @@ def executeTransaction(client, personId):
 	member = int(person['member']) > 0
 	
 	price_source = 'standard_price'
-	if (member):
+	if member and (amount>=0):
 		price_source = 'member_price'
 	
-	print(person)
+	#print(person)
+	
+	if member and (amount<0):
+		sys.stdout.write("\r\n\u001b[31mYour balance is negative, you're missing out on discount prices!!\u001b[39m\r\n")
 	
 	amountNew = amount
 	
