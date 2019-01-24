@@ -224,7 +224,21 @@ def queryStock(client, product_id):
 		print("Invalid input.")
 		return (-1, 0)
 	
-def listStock(client):
+def queryGroup(client):
+	groups = client.getGroups()
+	for group in groups:
+		print(str(group["id"])+". "+group["name"])
+	group_id = prompt(client, "Group? > ",False,False)
+	try:
+		group_id = int(group_id)
+		for group in groups:
+			if (group_id == group["id"]):
+				return group_id
+	except:
+		print("Invalid input.")
+	return None
+	
+def liststock(client):
 	if lastProduct:
 		print("List stock of "+lastProduct['name']+".")
 		stockEntries = client.getStock(lastProduct["id"])
@@ -286,6 +300,24 @@ def removestock(client):
 	else:
 		print("No product.")
 		
+def setprice(client):
+	global lastProduct, cmd_params, cart
+	if lastProduct:
+		print("Set price of of "+lastProduct['name']+".")
+		group = queryGroup(client)
+		if (group == None):
+			print("Invalid input.")
+			return
+		price = queryPrice(client, "Price")
+		if (price == None):
+			print("Invalid input.")
+			return
+		print("Setting price of "+str(lastProduct["id"])+" to "+str(price)+" for group "+str(group))
+		client.productSetPrice(lastProduct["id"], group, price)
+		cart = {}
+	else:
+		print("No product.")
+		
 def listgroups(client):
 	groups = client.getGroups()
 	for group in groups:
@@ -343,7 +375,7 @@ def command(client, user_input):
 			addstock(client)
 			return True
 		if cmd_params[0] == "liststock":
-			listStock(client)
+			liststock(client)
 			return True
 		if cmd_params[0] == "removestock":
 			removestock(client)
@@ -353,6 +385,9 @@ def command(client, user_input):
 			return True
 		if cmd_params[0] == "log":
 			lasttransactions(client)
+			return True
+		if cmd_params[0] == "setprice":
+			setprice(client)
 			return True
 		return False
 	elif (cmd=="add"):
@@ -376,6 +411,17 @@ def command(client, user_input):
 	lastCmd = ''
 	return False
 
+def queryPrice(client, text="Amount"):
+	amount = prompt(client, text+" > €",False,False)
+	if len(amount) < 1:
+		return
+	try:
+		amount = int(float(amount)*100)
+	except:
+		print("Not a number.")
+		return None
+	return amount
+
 def deposit(client):
 	def usage():
 		print("deposit <amount in €> <name of person>")
@@ -391,13 +437,9 @@ def deposit(client):
 		usage()
 		return
 	else:
-		amount = prompt(client, "Amount > €",False,False)
-		if len(amount) < 1:
-			return
-		try:
-			amount = int(float(amount)*100)
-		except:
-			print("Not a number.")
+		amount = queryPrice(client)
+		if (amount == None):
+			print("Invalid input.")
 			return
 		name = prompt(client, "Person > ",False,False)
 	
@@ -491,7 +533,7 @@ def main():
 	if not client.createSession():
 		sys.exit(1)
 
-	if not client.login("x","x"):
+	if not client.login("barsystem", ""):
 		sys.exit(1)
 		
 	while 1:

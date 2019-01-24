@@ -117,6 +117,9 @@ class RpcClient:
 			return self._request("product/find/barcode", barcode)
 		else:
 			return self._request("product/find/barcode", {"barcode": barcode, "type": type})
+		
+	def productSetPrice(self, product, group, price):
+		return self._request("product/price/set", {"product_id":product, "group_id":group, "amount":price})
 	
 	# TRANSACTIONS MODULE
 	
