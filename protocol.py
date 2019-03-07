@@ -77,6 +77,9 @@ class RpcClient:
 
 	# PERSONS MODULE
 
+	def personList(self, search):
+		return self._request("person/list", search)
+
 	def personFind(self, search):
 		return self._request("person/find", search)
 

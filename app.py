@@ -1,7 +1,126 @@
-import sys, time, datetime
+import readline, cmd, sys, time, datetime, pprint, term
+
 from protocol import RpcClient, ApiError
 
-import pprint, sys
+try:
+  from printer import ReceiptPrinter
+except:
+  print("No printer support available!")
+
+class Shell(cmd.Cmd):
+	def do_test(self, arg):
+		print("Test", arg)
+	
+	def do_help(self, arg):
+		help()
+	
+	def default(self, line):
+		if line == "EOF":
+			header()
+			print("Goodbye!")
+			time.sleep(1)
+			term.clear()
+			sys.exit()
+		#header()
+		#print("\nUnknown command.\n")
+		main2(line)
+		setPrompt()
+	
+	def completedefault(self, *args):
+		self.completenames(*args)
+	
+	def completenames(self, text, line, begidx, endidx):
+		#print("Complete",text,line,begidx,endidx)
+		query = readline.get_line_buffer().lstrip().lower()
+		results = []
+		#print("Complete",text, query)
+		for product in clProducts:
+			if product.startswith(text):
+				results.append(product)
+		for persons in clPersons:
+			if persons.startswith(text):
+				results.append(persons)
+		#print(results)
+		if len(results)>0:
+			return results
+		return []
+	
+	def emptyline(self):
+		usage()
+
+def halt(message, error=None):
+	term.clear()
+	term.header("Error")
+	print(message)
+	if error:
+		print("--------------------------")
+		print(error)
+	time.sleep(5)
+	sys.exit(1)
+
+def warning(message):
+	term.clear()
+	term.header("Warning")
+	print(message)
+	#time.sleep(2)
+
+def confirmation(success, message):
+	term.color(40,92,5)
+	print(message)
+	term.color(0)
+	term.color()
+
+def header():
+	term.clear()
+	term.header("TkkrLab barsystem", 103,30,1)
+	print("")
+
+def usage():
+	header()
+	printCart(client)
+	global cart
+	if len(cart) > 0:
+		print("Enter your name to buy the products in the cart.")
+		print("Enter the name of (/ scan) a product to add it to the cart.")
+		print("Enter 'abort' to clear the cart.")
+		print("Enter 'help' for a list of commands.")
+		print("")
+	else:
+		print("Enter your name to display information about your account.")
+		print("Enter the name of (/ scan) a product to add it to the cart.")
+		print("Enter 'help' for a list of commands.")
+		print("")
+
+def setPrompt():
+	if len(cart) < 1:
+		shell.prompt = "Command, user (query info) or product (add to cart)? > "
+	else:
+		shell.prompt = "Command, user (buy products) or product (add to cart)? > "
+
+def main():
+	global client, shell
+	
+	client = RpcClient("http://10.42.1.2:8000")
+	
+	if not client.createSession():
+		halt("Communication error", "Could not start the session!")
+		
+	if not client.login("barsystem", "<password>"):
+		halt("Communication error", "Could not authenticate!")
+	
+	global printer
+	try:
+		printer = ReceiptPrinter("/dev/ttyUSB0")
+	except:
+		printer = None
+		warning("Printer not available!")
+	
+	initCompletion()	
+	shell = Shell()
+	setPrompt()
+	header()
+	shell.cmdloop()
+
 pp = pprint.PrettyPrinter(indent=4)
 
 cart = {}
@@ -10,6 +129,22 @@ lastPerson = None
 lastProduct = None
 cmd_params = []
 development = False
+lastTransaction = []
+lastTransactionTotal = []
+
+def initCompletion():
+	global clProducts, clPersons
+	clProducts = []
+	clPersons = []
+	header()
+	print("Please wait, querying list of products...")
+	products = client.productList({})
+	for product in products:
+		clProducts.append(product["name"].lower())
+	persons = client.personList({})
+	print("Please wait, querying list of persons...")
+	for person in persons:
+		clPersons.append(person["nick_name"].lower())
 
 def abort():
 	global cart
@@ -46,10 +181,12 @@ def product(client, name):
 
 		lastProduct = result
 		
-		print("\u001b[32mAdded\u001b[39m "+result['name']+"\u001b[32m to your cart.\u001b[39m")
-		
 		productsToCart(client, [result])
 		
+		usage()
+		
+		print("\u001b[32mAdded\u001b[39m "+result['name']+"\u001b[32m to your cart.\u001b[39m")
+				
 		return True
 
 	return False
@@ -76,11 +213,16 @@ def executeTransaction(client, person):
 	
 	#sys.stdout.write("\r\n\u001b[31m"+message+"\u001b[39m\r\n")
 
-	printReceipt(transaction)
+	header()
+	confirmation(True, "Transaction completed!")
+
+	printTransaction(transaction)
 
 
-def printReceipt(transaction, neg=False):
-	global lastPerson
+def printTransaction(transaction, neg=False):
+	global lastPerson, lastTransaction, lastTransactionTotal
+	
+	lastTransaction = []
 	
 	if neg:
 		neg = -1
@@ -89,14 +231,26 @@ def printReceipt(transaction, neg=False):
 	
 	print("\r\n=== TRANSACTION RECEIPT ===")
 	for row in transaction["rows"]:
-		print(str(row["amount"])+"x "+'{0: <25}'.format(row["description"])+'{0: <6}'.format("€ "+str(neg*round(row["price"]*row["amount"]/100.0,2))))
+		print(str(row["amount"])+"x "+'{0: <29}'.format(row["description"])+'{0: <6}'.format("€ "+str(neg*round(row["price"]*row["amount"]/100.0,2))))
+		lastTransaction.append((row["description"], row["amount"], neg*round(row["price"]*row["amount"]/100.0,2)))
 
 	print("\r\nTransaction total:\t\t€ "+'{0: <6}'.format("{:.2f}".format(transaction['transaction']['total']/100.0)))
 	print("Saldo before transaction:\t€ "+'{0: <6}'.format("{:.2f}".format(lastPerson['saldo']/100.0)))
 	print("Saldo after transaction:\t€ "+'{0: <6}'.format("{:.2f}".format(transaction['person']['saldo']/100.0)))
+	lastTransactionTotal = [
+		("Total",transaction['transaction']['total']/100.0),
+		("Saldo before transaction",lastPerson['saldo']/100.0),
+		("Saldo after transaction",transaction['person']['saldo']/100.0)
+		]
+	
+	global printer
+	if printer != None:
+		print("\n")
+		print("Use 'print' to print this receipt.")
+	print("")
 
 	
-def person(client, name):
+def person(client, name, doTransaction=True):
 	global cart, lastPerson
 	results = client.personFind(name)
 	if (len(results) > 0):
@@ -115,7 +269,7 @@ def person(client, name):
 			for group in person['groups']:
 				print(group["name"]+" ",end="")
 			print("")
-		else:
+		elif doTransaction:
 			executeTransaction(client, person)
 		return True
 	return False
@@ -164,30 +318,32 @@ def stockToCart(client, product, stock):
 
 def printCart(client):
 	global cart
-	print("\r\n=== CART ========================================")
-	for i in cart:
-		product = cart[i]["product"]
-		amount = cart[i]["amount"]
-		print(str(amount)+"x "+'{0: <25}'.format(product['name']),end="")
-		print("\t", end="")
-		groups = client.getGroups()
-		for i in range(len(groups)):
-			group = groups[i]
-			last = i < (len(groups) - 1)
-			if last:
-				last = " / "
-			else:
-				last = ""
-			price = False
-			for entry in product['price']:
-				if entry['person_group_id'] == group['id']:
-					price = entry['amount']
-			if price:
-				price = "€ "+(str(price/100.0))
-			else:
-				price = "-"
-			print(group['name']+": "+'{0: <6}'.format(price)+last,end="")
-		print("")
+	if len(cart) > 0:
+		print("\r\n=== CART ========================================\r\n")
+		for i in cart:
+			product = cart[i]["product"]
+			amount = cart[i]["amount"]
+			print(str(amount)+"x "+'{0: <25}'.format(product['name']),end="")
+			print("\t", end="")
+			groups = client.getGroups()
+			for i in range(len(groups)):
+				group = groups[i]
+				last = i < (len(groups) - 1)
+				if last:
+					last = " / "
+				else:
+					last = ""
+				price = False
+				for entry in product['price']:
+					if entry['person_group_id'] == group['id']:
+						price = entry['amount']
+				if price:
+					price = "€ "+(str(price/100.0))
+				else:
+					price = "-"
+				print(group['name']+": "+'{0: <6}'.format(price)+last,end="")
+			print("\r\n")
+		print("=================================================\r\n\r\n")
 
 # Shell helper functions
 
@@ -346,6 +502,7 @@ def help():
 	print(" - clear      Clear screen")
 	print(" - abort      Abort transaction")
 	print(" - help       This text")
+	print("")
 
 def command(client, user_input):
 	global lastCmd, cmd_params
@@ -367,6 +524,9 @@ def command(client, user_input):
 	elif (cmd=="remove"):
 		cmd_params = ["0"]
 		setAmount(client)
+		return True
+	elif cmd == "print":
+		printReceipt()
 		return True
 	elif (cmd=="sudo"):
 		if (len(cmd_params) < 1):
@@ -390,7 +550,7 @@ def command(client, user_input):
 			setprice(client)
 			return True
 		return False
-	elif (cmd=="add"):
+	elif (cmd=="register"):
 		addperson(client)
 		return True
 	elif (cmd=="cls") or (cmd=="clear"):
@@ -443,19 +603,22 @@ def deposit(client):
 			return
 		name = prompt(client, "Person > ",False,False)
 	
-	if not person(client, name):
+	if not person(client, name, False):
 		print("Unknown person.")
 		return
 	
 	global lastPerson
 	
+
 	transaction = client.transactionExecute(
 		lastPerson["id"],
 		[],
 		[{"description":"Deposit", "price":-amount, "amount":1}]
 	)
 	
-	printReceipt(transaction, True)
+	header()
+	confirmation(True, "Deposit completed!")
+	printTransaction(transaction, True)
 	
 def setAmount(client):
 	global cart, lastProduct
@@ -494,7 +657,7 @@ def setAmount(client):
 def clear():
 	sys.stdout.write("\033c")
 
-def prompt(client, prompt=">",header=False, headerCart=False):
+def prompt(client, prompt=">",header=False, headerCart=False, history=False):
 	if (header):
 		#clear()
 		sys.stdout.write("\r\n\u001b[33mTkkrlab\u001b[39m barsystem\r\n")
@@ -506,80 +669,94 @@ def prompt(client, prompt=">",header=False, headerCart=False):
 
 	sys.stdout.write("\u001b[36m"+prompt+"\u001b[39m ")
 	sys.stdout.flush()
-	i = sys.stdin.readline().replace("\r","").replace("\n","")
+	buffer = ""
+	last = ""
+	buffer = sys.stdin.readline()
+	i = buffer.replace("\r","").replace("\n","")
 	print("")
 	sys.stdout.flush()
 	return i
 
+def printReceipt():
+	global printer, lastPerson, lastTransaction, lastTransactionTotal
+	
+	if printer == None:
+		print("No printer available.")
+		return
+	
+	if len(lastTransaction) < 1:
+		print("No transaction available.")
+		return
+	
+	print("Please wait...")
+	
+	customer_name = lastPerson['nick_name']
+	if (len(lastPerson['first_name'])+len(lastPerson['last_name'])) > 0:
+		customer_name = lastPerson['first_name']+" "+lastPerson['last_name']
+	
+	printer.init()
+	printer.set_code_table('cp858')
+	printer.print_image('tkkrlab.bmp')
+	printer.feed(1)
+	printer.set_align(printer.ALIGN_CENTER)
+	printer.set_print_mode(printer.PRINTMODE_FONT_A)
+	printer.writeline('*** TkkrLab Barsystem ***')
+	printer.feed(1)
+	printer.set_align(printer.ALIGN_LEFT)
+	printer.writeline('Customer {}'.format(customer_name))
+	printer.writeline('Date     {}'.format(time.strftime('%Y-%m-%d %H:%M:%S')))
+	printer.feed(2)
+
+	printer.set_align(printer.ALIGN_LEFT)
+	printer.set_print_mode(printer.PRINTMODE_FONT_B)
+
+	# products
+	for name, amount, cost in lastTransaction:
+		printer.write_product_line(name, cost, amount)
+
+	printer.set_print_mode(printer.PRINTMODE_FONT_A)
+	printer.writeline('-' * 42)
+	printer.set_print_mode(printer.PRINTMODE_FONT_B | printer.PRINTMODE_EMPHASIZED | printer.PRINTMODE_DOUBLE_HEIGHT)
+	first = True
+	for name, cost in lastTransactionTotal:
+		printer.write_product_line(name, cost)
+		if first:
+			first = False
+			printer.set_print_mode(printer.PRINTMODE_FONT_B | printer.PRINTMODE_EMPHASIZED)
+			printer.feed(1)
+	printer.set_print_mode(printer.PRINTMODE_FONT_A)
+
+	printer.feed(6)
+	printer.cut(0)
+
 # Main function
 
-def main():
-	global lastCmd, cart, development
-	showHeader = True
-	client = RpcClient("http://127.0.0.1:8000")
+def main2(line):
 	try:
-		client.createSession()
-		client.ping()
-		print("Connected to DEVELOPMENT")
-		development = True
-	except:
-		try:
-			client = RpcClient("http://10.42.1.2:8000")
-		except:
-			print("No server available.")
-			time.sleep(3)
-			sys.exit(1)
+		while not client.ping():
+			print("Server unavailable. Reconnecting in 2 seconds...")
+			time.sleep(2)
 
-	if not client.createSession():
-		sys.exit(1)
+		i = line #prompt(client, p, showHeader, True)
+		showHeader = True
 
-	if not client.login("barsystem", ""):
-		sys.exit(1)
-		
-	while 1:
-		try:
-			while not client.ping():
-				print("Server unavailable. Reconnecting in 2 seconds...")
-				time.sleep(2)
-
-			if development:
-				p = "Development >"
-			elif len(cart) < 1:
-				p = "Command, user (query info) or product (add to cart)? >"
-			else:
-				p = "Command, user (buy products) or product (add to cart)? >"
-
-			i = prompt(client, p, showHeader, True)
-			showHeader = True
-
-			if (len(i)>0):
-				if not command(client, i):
-					if not person(client, i):
-						if not product(client, i):
-							print("\u001b[31mError: unknown command, user or product.\u001b[39m")
-							showHeader = False
-						else:
-							showHeader = False
+		if (len(i)>0):
+			if not command(client, i):
+				if not person(client, i):
+					if not product(client, i):
+						print("\u001b[31mError: unknown command, user or product.\u001b[39m")
+						showHeader = False
 					else:
 						showHeader = False
 				else:
-					if ((lastCmd == 'clear') or (lastCmd == 'cls')):
-						showHeader = True
-					else:
-						showHeader = False
+					showHeader = False
 			else:
-				showHeader = False
-				if len(cart) > 0:
-					print("Enter your name to buy the products in the cart.")
-					print("Enter the name of (/ scan) a product to add it to the cart.")
-					print("Enter 'abort' to clear the cart.")
-					print("Enter 'help' for a list of commands.")
+				if ((lastCmd == 'clear') or (lastCmd == 'cls')):
+					showHeader = True
 				else:
-					print("Enter your name to display information about your account.")
-					print("Enter the name of (/ scan) a product to add it to the cart.")
-					print("Enter 'help' for a list of commands.")
-		except ApiError as e:
-			print("\u001b[31mServer error:",e,"\u001b[39m")
+					showHeader = False
+	except ApiError as e:
+		print("\u001b[31mServer error:",e,"\u001b[39m")
 
-
-main()
+if __name__ == '__main__':
+	main()
