@@ -100,12 +100,12 @@ def setPrompt():
 def main():
 	global client, shell
 	
-	client = RpcClient("http://10.42.1.2:8000")
+	client = RpcClient("http://localhost:8000")#"http://10.42.1.2:8000")
 	
 	if not client.createSession():
 		halt("Communication error", "Could not start the session!")
 		
-	if not client.login("barsystem", "<password>"):
+	if not client.login("barsystem", ""):
 		halt("Communication error", "Could not authenticate!")
 	
 	global printer
@@ -294,25 +294,14 @@ def stockToCart(client, product, stock):
 		if len(stock) > 0:
 			if (len(stock)<2):
 				cart[product]["stock"] = stock[0]
-				print("Taking stock from '"+stock[0]["name"]+"' ("+str(stock[0]["amount_current"])+")")
+				print("Taking stock from '"+str(stock[0]["id"])+"' ("+str(stock[0]["amount_current"])+")")
 			else:
-				invalid = True
-				while invalid:
-					stock_ids = []
-					nr = 0
-					for stockRecord in stock:
-						print(str(nr)+". '"+stockRecord['name']+"': "+str(stockRecord["amount_current"]))
-						nr+=1
-						stock_ids.append(stockRecord['id'])
-					stock_nr = prompt(client, "Take from which location? > ",False,False)
-					try:
-						stock_nr = int(stock_nr)
-						cart[product]["stock"] = stock[stock_nr]
-						print("Taking stock from '"+stock[stock_nr]["name"]+"' ("+str(stock[stock_nr]["amount_current"])+")")
-						invalid = False
-					except:
-						print("Invalid input.")
-						pass			
+				oldestStock = stock[0]
+				for stockRecord in stock:
+					if stockRecord["timestamp_initial"] < oldestStock["timestamp_initial"]:
+						oldestStock = stockRecord
+				cart[product]["stock"] = oldestStock
+				print("Taking stock from '"+str(oldestStock["id"])+"' ("+str(oldestStock["amount_current"])+")")
 		else:
 			print("Warning: product is out of stock!")
 

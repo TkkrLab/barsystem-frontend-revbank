@@ -100,8 +100,8 @@ class RpcClient:
 	def productFindById(self, i):
 		return self._request("product/find/id", i)
 	
-	def productFindByLocation(self, location):
-		return self._request("product/find/location", location);
+	#def productFindByLocation(self, location):
+	#	return self._request("product/find/location", location);
 
 	def productBarcode(self, barcode, type=None):
 		if type == None:
@@ -136,7 +136,6 @@ class RpcClient:
 			query['timestamp'] = {">=": after}
 		elif before != None:
 			query['timestamp'] = {"<=": before}
-		print("TRANSACTIONS", query)
 		return self._request("transaction/list", query)
 	
 	def lastTransactions(self, amount):
