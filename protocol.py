@@ -97,12 +97,6 @@ class RpcClient:
 	def productFindByNameLike(self, name):
 		return self._request("product/find/name/like", name)
 	
-	def productFindById(self, i):
-		return self._request("product/find/id", i)
-	
-	#def productFindByLocation(self, location):
-	#	return self._request("product/find/location", location);
-
 	def productBarcode(self, barcode, type=None):
 		if type == None:
 			return self._request("product/barcode", barcode)

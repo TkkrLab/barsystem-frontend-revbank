@@ -105,7 +105,7 @@ def main():
 	if not client.createSession():
 		halt("Communication error", "Could not start the session!")
 		
-	if not client.login("barsystem", ""):
+	if not client.login("barsystem", "<PASSWORD>"):
 		halt("Communication error", "Could not authenticate!")
 	
 	global printer
